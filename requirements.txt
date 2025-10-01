@@ -2,4 +2,5 @@ pycocotools
 tqdm
 cython
 scipy
+opencv-python
 timm==0.4.12

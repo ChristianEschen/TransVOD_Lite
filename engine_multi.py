@@ -119,6 +119,9 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
 
+    # NEW: store raw predictions for COCO export
+    coco_predictions_list = []   # NEW: store raw predictions for COCO export
+
     for samples, targets  in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items() if k!='path'} for t in targets[0]]
@@ -144,6 +147,30 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
             results = postprocessors['segm'](results, outputs, orig_target_sizes, target_sizes)
         res = {target['image_id'].item(): output for target, output in zip(targets, results)}
+
+        # new
+        for img_id, output in res.items():
+            orig_w, orig_h = orig_target_sizes[0]  # or the correct image size for this img
+            boxes = output['boxes']
+            
+            # If boxes are cx, cy, w, h (DETR-style), convert to x_min, y_min, w, h
+            x_c, y_c, w, h = boxes.unbind(1)
+            boxes = torch.stack([x_c - 0.5 * w, y_c - 0.5 * h, w, h], dim=1)
+
+            # Clip boxes
+            boxes[:, 0] = boxes[:, 0].clamp(0, orig_w)
+            boxes[:, 1] = boxes[:, 1].clamp(0, orig_h)
+            boxes[:, 2] = boxes[:, 2].clamp(0, orig_w)
+            boxes[:, 3] = boxes[:, 3].clamp(0, orig_h)
+
+            for box, score, label in zip(boxes, output['scores'], output['labels']):
+                coco_predictions_list.append({
+                    "image_id": img_id,
+                    "category_id": int(label),
+                    "bbox": box.tolist(),
+                    "score": float(score)
+                })
+        # new end
         if coco_evaluator is not None:
             coco_evaluator.update(res)
 
@@ -182,6 +209,14 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         stats['PQ_all'] = panoptic_res["All"]
         stats['PQ_th'] = panoptic_res["Things"]
         stats['PQ_st'] = panoptic_res["Stuff"]
+
+    
+    # NEW: save COCO predictions to JSON
+    coco_json_path = os.path.join(output_dir, "coco_predictions.json")
+    with open(coco_json_path, "w") as f:
+        import json
+        json.dump(coco_predictions_list, f)
+
     return stats, coco_evaluator
 
 
@@ -205,6 +240,8 @@ def evaluate1(model, criterion, postprocessors, data_loader, base_ds, device, ou
             data_loader.dataset.ann_folder,
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
+
+    coco_predictions_list = [] #new
 
     for samples, targets  in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
@@ -233,6 +270,9 @@ def evaluate1(model, criterion, postprocessors, data_loader, base_ds, device, ou
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
             results = postprocessors['segm'](results, outputs, orig_target_sizes, target_sizes)
         res = {target['image_id'].item(): output for target, output in zip(targets, results)}
+
+
+
         if coco_evaluator is not None:
             coco_evaluator.update(res)
 

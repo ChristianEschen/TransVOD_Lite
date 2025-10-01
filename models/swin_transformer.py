@@ -500,7 +500,8 @@ class SwinTransformer(nn.Module):
         self.patch_norm = patch_norm
         self.out_indices = out_indices
         self.frozen_stages = frozen_stages
-        self.fpn = FeaturePyramidNetwork(in_channels_list=[256, 512, 1024],  out_channels=256)
+       # self.fpn = FeaturePyramidNetwork(in_channels_list=[256, 512, 1024],  out_channels=256)
+        self.fpn = FeaturePyramidNetwork(in_channels_list=[192, 384, 768], out_channels=256) # Modified for swin_tiny
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
